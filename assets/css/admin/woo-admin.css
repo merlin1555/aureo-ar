@@ -1,0 +1,122 @@
+/**
+ * aureo-ar-woo-admin.css
+ * Estilos para el tab "Aureo AR" en el editor de producto de WooCommerce (admin WP).
+ */
+
+/* ── Panel general ──────────────────────────────────────────────── */
+#aureo_ar_product_data .aureo-ar-admin-panel {
+    padding: 16px 20px;
+}
+
+#aureo_ar_product_data .form-field {
+    display: flex;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 0;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+#aureo_ar_product_data .form-field:last-child {
+    border-bottom: none;
+}
+
+#aureo_ar_product_data .form-field label {
+    width: 200px;
+    font-weight: 600;
+    line-height: 28px;
+    flex-shrink: 0;
+}
+
+#aureo_ar_product_data .form-field .description {
+    width: 100%;
+    color: #888;
+    font-size: 12px;
+    margin-top: 2px;
+    flex-basis: 100%;
+}
+
+/* ── Select ─────────────────────────────────────────────────────── */
+.aureo-ar-select {
+    min-width: 260px;
+    padding: 5px 8px;
+    border-radius: 4px;
+    border: 1px solid #8c8f94;
+    font-size: 13px;
+    background: #fff;
+    cursor: pointer;
+    transition: border-color .15s;
+}
+
+.aureo-ar-select:focus {
+    border-color: #2271b1;
+    box-shadow: 0 0 0 1px #2271b1;
+    outline: none;
+}
+
+/* ── Botones uploader ───────────────────────────────────────────── */
+.aureo-ar-admin-panel .button {
+    flex-shrink: 0;
+}
+
+.aureo-ar-clear-btn {
+    background: #fff !important;
+    color: #b32d2e !important;
+    border-color: #b32d2e !important;
+    padding: 0 8px !important;
+    font-size: 16px !important;
+    line-height: 26px !important;
+    min-height: 28px;
+}
+
+/* ── Preview model-viewer ───────────────────────────────────────── */
+#aureo-model-preview-wrapper {
+    width: 100%;
+    max-width: 580px;
+    height: 300px;
+    background: #f0f0f0;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    margin: 0 0 12px 200px; /* alineado con el contenido de los labels */
+    position: relative;
+    overflow: hidden;
+}
+
+@media (max-width: 900px) {
+    #aureo-model-preview-wrapper {
+        margin-left: 0;
+    }
+}
+
+/* ── Badges de estado ───────────────────────────────────────────── */
+.aureo-ar-status-row {
+    padding: 10px 0 4px;
+}
+
+.aureo-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 4px 10px;
+    border-radius: 20px;
+}
+
+.aureo-status--ok {
+    background: #edfdf3;
+    color: #276749;
+    border: 1px solid #b7e4c7;
+}
+
+.aureo-status--warn {
+    background: #fffbeb;
+    color: #92400e;
+    border: 1px solid #fcd34d;
+}
+
+.aureo-status--off {
+    background: #f3f4f6;
+    color: #6b7280;
+    border: 1px solid #d1d5db;
+}

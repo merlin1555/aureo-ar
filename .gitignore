@@ -1,0 +1,14 @@
+# Archivos basura del sistema operativo
+.DS_Store
+Thumbs.db
+
+# Configuración de editores de código
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+
+# Archivos de registro de errores que genera WordPress
+*.log
+error_log

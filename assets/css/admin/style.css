@@ -1,0 +1,53 @@
+/* Layout del Visor */
+.aureo-ar-visor-container {
+    display: flex;
+    gap: 15px;
+    height: 600px;
+    margin-top: 10px;
+}
+
+/* Sidebar Izquierdo */
+.visor-sidebar-left {
+    flex: 1; /* 20% aprox */
+    background: #f9f9f9;
+    border: 1px solid #ddd;
+    padding: 15px;
+    overflow-y: auto;
+}
+
+.select-model-btn {
+    width: 100%;
+    text-align: left;
+    padding: 8px;
+    margin-bottom: 5px;
+    cursor: pointer;
+    background: #fff;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+.select-model-btn:hover { background: #e0f0ff; }
+
+/* Canvas Central */
+.visor-canvas-center {
+    flex: 3; /* 60% aprox */
+    background: #eee;
+    border: 1px solid #ccc;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Sidebar Derecho */
+.visor-sidebar-right {
+    flex: 1; /* 20% aprox */
+    background: #f9f9f9;
+    border: 1px solid #ddd;
+    padding: 15px;
+}
+
+.control-group { margin-bottom: 20px; }
+.control-group label { display: block; font-weight: bold; margin-bottom: 5px; }
+
+.aureo-ar-admin-wrap .card{max-width: none !important;}
