@@ -13,10 +13,6 @@
  *   _aureo_ar_model_url         → URL al archivo GLB/GLTF
  *   _aureo_ar_usdz_url          → URL al archivo USDZ (iOS — opcional)
  *
- *   Solo para earring_dangle:
- *   _aureo_ar_chain_length      → Longitud cadena (cm, default 2.5)
- *   _aureo_ar_earring_mass      → Peso del aro (gramos, default 5)
- *   _aureo_ar_swing_damping     → Amortiguamiento (0–1, default 0.4)
  */
 
 if ( ! defined( 'ABSPATH' ) ) { exit; }
@@ -49,10 +45,13 @@ class Aureo_AR_WCFM {
         $acc_type    = $product_id ? ( get_post_meta( $product_id, '_aureo_ar_accessory_type', true ) ?: 'earring_stud' ) : 'earring_stud';
         $glb_url     = $product_id ? ( get_post_meta( $product_id, '_aureo_ar_model_url',      true ) ?: '' ) : '';
         $usdz_url    = $product_id ? ( get_post_meta( $product_id, '_aureo_ar_usdz_url',       true ) ?: '' ) : '';
-        $chain_len   = $product_id ? ( get_post_meta( $product_id, '_aureo_ar_chain_length',   true ) ?: '2.5' ) : '2.5';
-        $mass        = $product_id ? ( get_post_meta( $product_id, '_aureo_ar_earring_mass',   true ) ?: '5' ) : '5';
-        $damping     = $product_id ? ( get_post_meta( $product_id, '_aureo_ar_swing_damping',  true ) ?: '0.4' ) : '0.4';
-
+        $color_mode    = $product_id ? ( get_post_meta( $product_id, '_aureo_ar_color_mode',      true ) ?: 'model_texture' ) : 'model_texture';
+        $colors_raw    = $product_id ? ( get_post_meta( $product_id, '_aureo_ar_colors',          true ) ?: '[]' ) : '[]';
+        $colors        = json_decode( $colors_raw, true );
+        if ( ! is_array( $colors ) || empty( $colors ) ) { $colors = array( '#c0c0c0' ); }
+        $mat_slots_raw = $product_id ? ( get_post_meta( $product_id, '_aureo_ar_material_slots',  true ) ?: '{}' ) : '{}';
+        $mat_slots     = json_decode( $mat_slots_raw, true );
+        if ( ! is_array( $mat_slots ) ) { $mat_slots = array(); }
         // Compatibilidad: 'earring' antiguo → 'earring_stud'
         if ( $acc_type === 'earring' ) {
             $acc_type = 'earring_stud';
@@ -73,7 +72,8 @@ class Aureo_AR_WCFM {
 
                 <div class="aureo-ar-grid"
                      data-aureo-ar-type="<?php echo esc_attr( $ar_type ); ?>"
-                     data-aureo-acc-type="<?php echo esc_attr( $acc_type ); ?>">
+                     data-aureo-acc-type="<?php echo esc_attr( $acc_type ); ?>"
+                     data-aureo-color-mode="<?php echo esc_attr( $color_mode ); ?>">
 
                     <!-- ───── Columna izquierda: controles ───── -->
                     <div class="aureo-ar-grid-left">
@@ -180,60 +180,68 @@ class Aureo_AR_WCFM {
                             </p>
                         </div>
 
-                        <!-- ── Parámetros físicos (solo earring_dangle) ── -->
-                        <div class="aureo-row--earring-dangle">
-                            <div class="aureo-ar-physics-divider">
-                                <?php esc_html_e( '🎚 Parámetros del péndulo', 'aureo-ar' ); ?>
-                            </div>
+                        <!-- Modo de color -->
+                        <div class="aureo-ar-field aureo-row--has-model">
+                            <label for="_aureo_ar_color_mode" class="aureo-ar-label">
+                                <?php esc_html_e( 'Modo de color', 'aureo-ar' ); ?>
+                            </label>
+                            <select name="_aureo_ar_color_mode" id="_aureo_ar_color_mode"
+                                    class="aureo-ar-control aureo-ar-select">
+                                <option value="model_texture" <?php selected( $color_mode, 'model_texture' ); ?>>
+                                    <?php esc_html_e( 'Colores del modelo (sin cambios)', 'aureo-ar' ); ?>
+                                </option>
+                                <option value="multi_color" <?php selected( $color_mode, 'multi_color' ); ?>>
+                                    <?php esc_html_e( 'Un color (selector en el visor)', 'aureo-ar' ); ?>
+                                </option>
+                                <option value="per_material" <?php selected( $color_mode, 'per_material' ); ?>>
+                                    <?php esc_html_e( 'Color / textura por material (material0, material1…)', 'aureo-ar' ); ?>
+                                </option>
+                            </select>
+                            <p class="aureo-ar-hint">
+                                <?php esc_html_e( 'Paleta: el usuario elige entre varios colores dentro del visor AR.', 'aureo-ar' ); ?>
+                            </p>
+                        </div>
 
-                            <div class="aureo-ar-field">
-                                <label for="_aureo_ar_chain_length" class="aureo-ar-label">
-                                    <?php esc_html_e( 'Longitud de cadena (cm)', 'aureo-ar' ); ?>
-                                </label>
-                                <input type="number"
-                                       name="_aureo_ar_chain_length"
-                                       id="_aureo_ar_chain_length"
-                                       class="aureo-ar-control aureo-ar-text"
-                                       value="<?php echo esc_attr( $chain_len ); ?>"
-                                       min="0.5" max="15" step="0.1" />
-                                <p class="aureo-ar-hint">
-                                    <?php esc_html_e( 'Distancia desde la oreja hasta el aro. Mayor = más balanceo.', 'aureo-ar' ); ?>
-                                </p>
+                        <!-- Lista de colores -->
+                        <div class="aureo-ar-field aureo-row--has-model aureo-row--colors">
+                            <label class="aureo-ar-label">
+                                <?php esc_html_e( 'Colores', 'aureo-ar' ); ?>
+                            </label>
+                            <div id="aureo-ar-color-list" class="aureo-ar-color-list">
+                                <?php foreach ( $colors as $hex ) :
+                                    if ( ! preg_match( '/^#[0-9a-fA-F]{6}$/', $hex ) ) continue;
+                                ?>
+                                <div class="aureo-color-entry">
+                                    <input type="color" class="aureo-color-picker" value="<?php echo esc_attr( $hex ); ?>">
+                                    <button type="button" class="aureo-ar-btn aureo-ar-btn--danger aureo-remove-color-btn">✕</button>
+                                </div>
+                                <?php endforeach; ?>
                             </div>
+                            <button type="button"
+                                    class="aureo-ar-btn aureo-ar-btn--primary aureo-row--colors-add-btn"
+                                    id="aureo-ar-add-color-btn">
+                                <?php esc_html_e( '+ Agregar color', 'aureo-ar' ); ?>
+                            </button>
+                            <input type="hidden" name="_aureo_ar_colors" id="aureo_ar_colors_data"
+                                   value="<?php echo esc_attr( wp_json_encode( $colors ) ); ?>">
+                            <p class="aureo-ar-hint">
+                                <?php esc_html_e( 'Para aro colgante, solo cambia el aro; el gancho mantiene su color original.', 'aureo-ar' ); ?>
+                            </p>
+                        </div>
 
-                            <div class="aureo-ar-field">
-                                <label for="_aureo_ar_earring_mass" class="aureo-ar-label">
-                                    <?php esc_html_e( 'Peso del aro (gramos)', 'aureo-ar' ); ?>
-                                </label>
-                                <input type="number"
-                                       name="_aureo_ar_earring_mass"
-                                       id="_aureo_ar_earring_mass"
-                                       class="aureo-ar-control aureo-ar-text"
-                                       value="<?php echo esc_attr( $mass ); ?>"
-                                       min="0.5" max="50" step="0.5" />
-                                <p class="aureo-ar-hint">
-                                    <?php esc_html_e( 'Influye en la inercia. Más pesado = balanceo más lento.', 'aureo-ar' ); ?>
-                                </p>
+                        <!-- Materiales por nombre (per_material) -->
+                        <div class="aureo-ar-field aureo-row--has-model aureo-row--materials">
+                            <label class="aureo-ar-label">
+                                <?php esc_html_e( 'Materiales del modelo', 'aureo-ar' ); ?>
+                            </label>
+                            <div id="aureo-ar-material-list" class="aureo-ar-material-list">
+                                <p class="aureo-mat-notice"><?php esc_html_e( 'Selecciona un modelo GLB para detectar sus materiales.', 'aureo-ar' ); ?></p>
                             </div>
-
-                            <div class="aureo-ar-field">
-                                <label for="_aureo_ar_swing_damping" class="aureo-ar-label">
-                                    <?php esc_html_e( 'Amortiguamiento (0–1)', 'aureo-ar' ); ?>
-                                </label>
-                                <input type="number"
-                                       name="_aureo_ar_swing_damping"
-                                       id="_aureo_ar_swing_damping"
-                                       class="aureo-ar-control aureo-ar-text"
-                                       value="<?php echo esc_attr( $damping ); ?>"
-                                       min="0" max="1" step="0.05" />
-                                <p class="aureo-ar-hint">
-                                    <?php esc_html_e( '0 = oscila para siempre. 1 = se detiene casi al instante. 0.4 es realista.', 'aureo-ar' ); ?>
-                                </p>
-                            </div>
-
-                            <div class="aureo-ar-physics-tip">
-                                💡 <?php esc_html_e( 'En el visor frontend hay sliders para ajustar estos valores en vivo y luego puedes copiarlos aquí.', 'aureo-ar' ); ?>
-                            </div>
+                            <input type="hidden" name="_aureo_ar_material_slots" id="aureo_ar_material_slots_data"
+                                   value="<?php echo esc_attr( wp_json_encode( $mat_slots ) ); ?>">
+                            <p class="aureo-ar-hint">
+                                <?php esc_html_e( 'Nombra los materiales material0, material1… en tu software 3D. El visor asignará el color o textura configurado a cada uno.', 'aureo-ar' ); ?>
+                            </p>
                         </div>
 
                         <!-- Estado -->
@@ -322,19 +330,57 @@ class Aureo_AR_WCFM {
                  : delete_post_meta( $product_id, '_aureo_ar_usdz_url' );
         }
 
-        // Parámetros físicos del péndulo (con clamps de seguridad)
-        if ( isset( $form_data['_aureo_ar_chain_length'] ) ) {
-            $val = max( 0.5, min( 15.0, floatval( $form_data['_aureo_ar_chain_length'] ) ) );
-            update_post_meta( $product_id, '_aureo_ar_chain_length', $val );
+        // _aureo_ar_color_mode
+        $allowed_color_modes = array( 'model_texture', 'multi_color', 'per_material' );
+        if ( isset( $form_data['_aureo_ar_color_mode'] ) ) {
+            $cm = in_array( $form_data['_aureo_ar_color_mode'], $allowed_color_modes, true )
+                ? $form_data['_aureo_ar_color_mode'] : 'model_texture';
+            update_post_meta( $product_id, '_aureo_ar_color_mode', $cm );
         }
-        if ( isset( $form_data['_aureo_ar_earring_mass'] ) ) {
-            $val = max( 0.5, min( 50.0, floatval( $form_data['_aureo_ar_earring_mass'] ) ) );
-            update_post_meta( $product_id, '_aureo_ar_earring_mass', $val );
+
+        // _aureo_ar_colors
+        if ( isset( $form_data['_aureo_ar_colors'] ) ) {
+            $raw    = stripslashes( (string) $form_data['_aureo_ar_colors'] );
+            $parsed = json_decode( $raw, true );
+            if ( is_array( $parsed ) ) {
+                $sanitized = array_values( array_filter( array_map( function ( $c ) {
+                    $c = strtolower( trim( (string) $c ) );
+                    return preg_match( '/^#[0-9a-f]{6}$/', $c ) ? $c : null;
+                }, $parsed ) ) );
+                update_post_meta( $product_id, '_aureo_ar_colors', wp_json_encode( $sanitized ) );
+            }
         }
-        if ( isset( $form_data['_aureo_ar_swing_damping'] ) ) {
-            $val = max( 0.0, min( 1.0, floatval( $form_data['_aureo_ar_swing_damping'] ) ) );
-            update_post_meta( $product_id, '_aureo_ar_swing_damping', $val );
+
+        // _aureo_ar_material_slots
+        if ( isset( $form_data['_aureo_ar_material_slots'] ) ) {
+            $raw    = stripslashes( (string) $form_data['_aureo_ar_material_slots'] );
+            $parsed = json_decode( $raw, true );
+            if ( is_array( $parsed ) ) {
+                $sanitized = array();
+                foreach ( $parsed as $mat_name => $slot ) {
+                    if ( ! preg_match( '/^material\d+$/i', (string) $mat_name ) ) { continue; }
+                    if ( ! is_array( $slot ) ) { continue; }
+                    $type = ( isset( $slot['type'] ) && $slot['type'] === 'texture' ) ? 'texture' : 'color';
+                    if ( $type === 'color' ) {
+                        // Soporte formato nuevo (colors[]) y legado (value)
+                        $raw_colors = isset( $slot['colors'] ) && is_array( $slot['colors'] )
+                            ? $slot['colors']
+                            : array( isset( $slot['value'] ) ? $slot['value'] : '#c0c0c0' );
+                        $clean_colors = array_values( array_filter( array_map( function ( $c ) {
+                            $c = strtolower( trim( (string) $c ) );
+                            return preg_match( '/^#[0-9a-f]{6}$/', $c ) ? $c : null;
+                        }, $raw_colors ) ) );
+                        if ( empty( $clean_colors ) ) { $clean_colors = array( '#c0c0c0' ); }
+                        $sanitized[ strtolower( $mat_name ) ] = array( 'type' => 'color', 'colors' => $clean_colors );
+                    } else {
+                        $value = esc_url_raw( trim( (string) ( $slot['value'] ?? '' ) ) );
+                        $sanitized[ strtolower( $mat_name ) ] = array( 'type' => 'texture', 'value' => $value );
+                    }
+                }
+                update_post_meta( $product_id, '_aureo_ar_material_slots', wp_json_encode( $sanitized ) );
+            }
         }
+
     }
 
     /* =====================================================================
@@ -518,6 +564,59 @@ class Aureo_AR_WCFM {
             display: none !important;
         }
 
+        /* ── Colores: visibilidad por modo ───────────────────────────── */
+        .aureo-ar-grid[data-aureo-color-mode="model_texture"] .aureo-row--colors,
+        .aureo-ar-grid[data-aureo-color-mode="per_material"]  .aureo-row--colors,
+        .aureo-ar-grid[data-aureo-ar-type="none"] .aureo-row--colors {
+            display: none !important;
+        }
+        /* ── Materiales: solo visible en modo per_material ───────────── */
+        .aureo-ar-grid:not([data-aureo-color-mode="per_material"]) .aureo-row--materials,
+        .aureo-ar-grid[data-aureo-ar-type="none"] .aureo-row--materials {
+            display: none !important;
+        }
+
+        /* Color entries */
+        .aureo-ar-color-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .aureo-color-entry {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .aureo-color-picker {
+            width: 42px;
+            height: 32px;
+            padding: 2px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            cursor: pointer;
+            background: #fff;
+        }
+
+        /* Material rows */
+        .aureo-ar-material-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+        .aureo-material-row {
+            display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+            background: #f8f8f8; padding: 6px 10px; border-radius: 4px; border: 1px solid #ddd;
+        }
+        .aureo-material-name { font-size: 13px; font-weight: 600; min-width: 80px; color: #2c8aaa; font-family: monospace; }
+        .aureo-material-type { padding: 4px 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; }
+        /* Multi-color por material */
+        .aureo-mat-colors-wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: 1; }
+        .aureo-mat-color-entry { display: flex; align-items: center; gap: 4px; }
+        .aureo-mat-color-picker { width: 42px; height: 32px; padding: 2px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; }
+        .aureo-add-mat-color-btn { font-size: 11px !important; padding: 4px 8px !important; }
+        .aureo-remove-mat-color-btn { background: #c0392b; color: #fff; border: none; border-radius: 4px; padding: 3px 7px; font-size: 13px; cursor: pointer; line-height: 1.4; }
+        .aureo-texture-wrap { display: flex; gap: 6px; align-items: center; flex: 1; }
+        .aureo-texture-wrap input { flex: 1; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; }
+        .aureo-mat-notice { font-size: 12px; color: #777; font-style: italic; margin: 4px 0; }
+        .aureo-mat-notice--warn { color: #856404; }
+
         @media (max-width: 900px) {
             .aureo-ar-grid {
                 grid-template-columns: 1fr;
@@ -568,6 +667,189 @@ class Aureo_AR_WCFM {
                 $grid.on('change', 'select[name="_aureo_ar_accessory_type"]', function(){
                     $grid.attr('data-aureo-acc-type', $(this).val() || 'earring_stud');
                 });
+
+                /* Modo de color → visibilidad */
+                $grid.on('change', 'select[name="_aureo_ar_color_mode"]', function(){
+                    var mode = $(this).val() || 'model_texture';
+                    $grid.attr('data-aureo-color-mode', mode);
+                    if (mode === 'per_material') {
+                        detectMaterialsWCFM();
+                    } else {
+                        syncColorsData();
+                    }
+                });
+
+                /* Sincronizar campo hidden con pickers */
+                function syncColorsData() {
+                    var colors = [];
+                    $('#aureo-ar-color-list .aureo-color-picker').each(function(){
+                        colors.push($(this).val());
+                    });
+                    $('#aureo_ar_colors_data').val(JSON.stringify(colors));
+                }
+
+                $grid.on('input change', '#aureo-ar-color-list .aureo-color-picker', function(){
+                    syncColorsData();
+                });
+
+                $grid.on('click', '#aureo-ar-add-color-btn', function(e){
+                    e.preventDefault();
+                    var entry = '<div class="aureo-color-entry">' +
+                        '<input type="color" class="aureo-color-picker" value="#c0c0c0">' +
+                        '<button type="button" class="aureo-ar-btn aureo-ar-btn--danger aureo-remove-color-btn">✕</button>' +
+                        '</div>';
+                    $('#aureo-ar-color-list').append(entry);
+                    syncColorsData();
+                });
+
+                $grid.on('click', '.aureo-remove-color-btn', function(e){
+                    e.preventDefault();
+                    var $entries = $('#aureo-ar-color-list .aureo-color-entry');
+                    if ($entries.length <= 1) return;
+                    $(this).closest('.aureo-color-entry').remove();
+                    syncColorsData();
+                });
+
+                syncColorsData();
+
+                /* ── Gestión de materiales (per_material) ──────────── */
+                function detectMaterialsWCFM() {
+                    var viewer = document.getElementById('aureo-ar-mini-viewer');
+                    if (!viewer || !viewer.model) {
+                        $('#aureo-ar-material-list').html('<p class="aureo-mat-notice">Cargando modelo… Los materiales aparecerán cuando el preview cargue.</p>');
+                        return;
+                    }
+                    var mats = (viewer.model.materials || []).filter(function(m){
+                        return /^material\d+$/i.test(m.name);
+                    }).sort(function(a,b){ return a.name.localeCompare(b.name, undefined, {numeric:true}); });
+
+                    if (!mats.length) {
+                        $('#aureo-ar-material-list').html('<p class="aureo-mat-notice aureo-mat-notice--warn">⚠ No se encontraron materiales con nombre <strong>materialN</strong> en este modelo.</p>');
+                        syncMaterialSlotsData();
+                        return;
+                    }
+                    var savedSlots = {};
+                    try { savedSlots = JSON.parse($('#aureo_ar_material_slots_data').val() || '{}'); } catch(e) {}
+
+                    var html = '';
+                    mats.forEach(function(mat){
+                        var saved = savedSlots[mat.name] || {type:'color', colors:['#c0c0c0']};
+                        var isTex = saved.type === 'texture';
+
+                        // Soporte formato nuevo (colors[]) y legado (value)
+                        var colors = ['#c0c0c0'];
+                        if (!isTex) {
+                            if (Array.isArray(saved.colors) && saved.colors.length) {
+                                colors = saved.colors;
+                            } else if (saved.value) {
+                                colors = [saved.value];
+                            }
+                        }
+                        var texVal = isTex ? (saved.value || '') : '';
+
+                        html += '<div class="aureo-material-row" data-material="'+mat.name+'">';
+                        html += '<span class="aureo-material-name">'+mat.name+'</span>';
+                        html += '<select class="aureo-material-type aureo-ar-control" style="width:auto">';
+                        html += '<option value="color"'   +(!isTex?' selected':'')+'>Color</option>';
+                        html += '<option value="texture"' +(isTex ?' selected':'')+'>Textura</option>';
+                        html += '</select>';
+                        html += '<div class="aureo-mat-colors-wrap"'+(isTex?' style="display:none"':'')+' >';
+                        colors.forEach(function(c){
+                            html += '<div class="aureo-mat-color-entry">';
+                            html += '<input type="color" class="aureo-mat-color-picker" value="'+c+'">';
+                            html += '<button type="button" class="aureo-remove-mat-color-btn">✕</button>';
+                            html += '</div>';
+                        });
+                        html += '<button type="button" class="aureo-ar-btn aureo-ar-btn--primary aureo-add-mat-color-btn">+ Color</button>';
+                        html += '</div>';
+                        html += '<div class="aureo-texture-wrap"'+(!isTex?' style="display:none"':'')+' >';
+                        html += '<input type="text" class="aureo-material-texture" value="'+texVal+'" placeholder="https://… URL de textura">';
+                        html += '<button type="button" class="aureo-ar-btn aureo-ar-btn--primary aureo-wcfm-select-texture" style="font-size:12px;padding:5px 10px">Seleccionar</button>';
+                        html += '</div>';
+                        html += '</div>';
+                    });
+                    $('#aureo-ar-material-list').html(html);
+                    syncMaterialSlotsData();
+                }
+
+                function syncMaterialSlotsData() {
+                    var slots = {};
+                    $('#aureo-ar-material-list .aureo-material-row').each(function(){
+                        var mat  = $(this).data('material');
+                        var type = $(this).find('.aureo-material-type').val();
+                        if (type === 'color') {
+                            var colors = [];
+                            $(this).find('.aureo-mat-color-picker').each(function(){
+                                colors.push($(this).val());
+                            });
+                            slots[mat] = {type: 'color', colors: colors};
+                        } else {
+                            slots[mat] = {type: 'texture', value: $(this).find('.aureo-material-texture').val()};
+                        }
+                    });
+                    $('#aureo_ar_material_slots_data').val(JSON.stringify(slots));
+                }
+
+                $grid.on('change', '#aureo-ar-material-list .aureo-material-type', function(){
+                    var $row  = $(this).closest('.aureo-material-row');
+                    var isTex = $(this).val() === 'texture';
+                    $row.find('.aureo-mat-colors-wrap').toggle(!isTex);
+                    $row.find('.aureo-texture-wrap').toggle(isTex);
+                    syncMaterialSlotsData();
+                });
+
+                $grid.on('input change', '#aureo-ar-material-list .aureo-mat-color-picker, #aureo-ar-material-list .aureo-material-texture', function(){
+                    syncMaterialSlotsData();
+                });
+
+                // Agregar color a un material
+                $grid.on('click', '#aureo-ar-material-list .aureo-add-mat-color-btn', function(e){
+                    e.preventDefault();
+                    var $wrap = $(this).closest('.aureo-mat-colors-wrap');
+                    var entry = '<div class="aureo-mat-color-entry">' +
+                        '<input type="color" class="aureo-mat-color-picker" value="#c0c0c0">' +
+                        '<button type="button" class="aureo-remove-mat-color-btn">✕</button>' +
+                        '</div>';
+                    $wrap.find('.aureo-add-mat-color-btn').before(entry);
+                    syncMaterialSlotsData();
+                });
+
+                // Eliminar color de un material (mínimo 1)
+                $grid.on('click', '#aureo-ar-material-list .aureo-remove-mat-color-btn', function(e){
+                    e.preventDefault();
+                    var $wrap = $(this).closest('.aureo-mat-colors-wrap');
+                    if ($wrap.find('.aureo-mat-color-entry').length <= 1) return;
+                    $(this).closest('.aureo-mat-color-entry').remove();
+                    syncMaterialSlotsData();
+                });
+
+                $grid.on('click', '.aureo-wcfm-select-texture', function(e){
+                    e.preventDefault();
+                    var $input = $(this).closest('.aureo-texture-wrap').find('.aureo-material-texture');
+                    var frame = wp.media({
+                        title: '<?php echo esc_js( __( 'Seleccionar textura', 'aureo-ar' ) ); ?>',
+                        button: { text: '<?php echo esc_js( __( 'Usar esta imagen', 'aureo-ar' ) ); ?>' },
+                        library: { type: 'image' },
+                        multiple: false
+                    });
+                    frame.on('select', function(){
+                        var att = frame.state().get('selection').first().toJSON();
+                        if (att && att.url) { $input.val(att.url).trigger('input'); }
+                    });
+                    frame.open();
+                });
+
+                var mvWcfm = document.getElementById('aureo-ar-mini-viewer');
+                if (mvWcfm) {
+                    mvWcfm.addEventListener('load', function(){
+                        if ($grid.attr('data-aureo-color-mode') === 'per_material') {
+                            detectMaterialsWCFM();
+                        }
+                    });
+                }
+                if ($grid.attr('data-aureo-color-mode') === 'per_material') {
+                    detectMaterialsWCFM();
+                }
 
                 /* GLB ↔ preview */
                 $grid.on('input change', 'input[name="_aureo_ar_model_url"]', function(){

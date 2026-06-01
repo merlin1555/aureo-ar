@@ -13,17 +13,20 @@ let activeMode = null;
 
 let leftEarring  = null;
 let rightEarring = null;
+let leftHook     = null;
+let rightHook    = null;
 
 // ═══════════════════════════════════════════════════════════════════
 // Calibración compartida (la usan ambos modos vía import)
 // ═══════════════════════════════════════════════════════════════════
 export const CALIB = {
-  // Anchors de MindAR para las orejas
+  // Anchors de MindAR para las orejas (MediaPipe Face Mesh)
+  // 234 = lóbulo izquierdo, 454 = lóbulo derecho
   leftAnchorIdx:  234,
-  rightAnchorIdx: 356,
+  rightAnchorIdx: 454,
 
-  // Tamaño del modelo 3D
-  scale: 0.15,
+  // Tamaño del modelo 3D — ajustar según el GLB (empieza pequeño y sube)
+  scale: 0.1,
 
   // Offsets respecto al anchor (X se espeja para el lado derecho)
   offsetX: 0.00,
@@ -67,10 +70,8 @@ async function startAR() {
   ({ renderer, scene, camera } = mindarThree);
 
   // ── Luces ─────────────────────────────────────────────────────────
-  scene.add(new THREE.AmbientLight(0xffffff, 1.0));
-  const dir = new THREE.DirectionalLight(0xffffff, 0.8);
-  dir.position.set(1, 1, 2);
-  scene.add(dir);
+  // Solo luz ambiente: iluminación uniforme sin sombras direccionales.
+  scene.add(new THREE.AmbientLight(0xffffff, 3.14));
 
   // ── Anchors izq/der ──────────────────────────────────────────────
   const leftAnchor  = mindarThree.addAnchor(CALIB.leftAnchorIdx);
@@ -86,12 +87,12 @@ async function startAR() {
   scene.add(occluder);
 
   // 🔍 Malla facial de debug (wireframe verde) — quitar en producción
-  const faceMesh = mindarThree.addFaceMesh();
-  faceMesh.material = new THREE.MeshBasicMaterial({
-    color: 0x00ff88, wireframe: true, transparent: true, opacity: 0.3, depthTest: false,
-  });
-  faceMesh.renderOrder = 999;
-  scene.add(faceMesh);
+  // const faceMesh = mindarThree.addFaceMesh();
+  // faceMesh.material = new THREE.MeshBasicMaterial({
+  //   color: 0x00ff88, wireframe: true, transparent: true, opacity: 0.3, depthTest: false,
+  // });
+  // faceMesh.renderOrder = 999;
+  // scene.add(faceMesh);
 
   // ── Carga del modelo GLB y clonado izq/der ───────────────────────
   const gltf = await new Promise((resolve, reject) => {
@@ -105,22 +106,71 @@ async function startAR() {
   rightEarring.scale.setScalar(CALIB.scale);
   rightEarring.scale.x *= -1; // efecto espejo
 
+  // Convertir TODOS los materiales a MeshBasicMaterial: muestra el color
+  // puro sin ningún cálculo de iluminación, equivalente a luz ambiental
+  // perfecta y uniforme desde todas las direcciones. Esto resuelve que
+  // materiales metálicos (metalness alto) queden negros con solo ambient.
+  const upgradeMat = m => {
+    const basic = new THREE.MeshBasicMaterial({
+      color:       m.color ? m.color.clone() : new THREE.Color(1, 1, 1),
+      map:         m.map        ?? null,
+      transparent: m.transparent ?? false,
+      opacity:     m.opacity     ?? 1.0,
+      side:        m.side        ?? THREE.FrontSide,
+      alphaTest:   m.alphaTest   ?? 0,
+      depthTest:   true,
+      depthWrite:  true,
+    });
+    basic.name = m.name ?? '';
+    return basic;
+  };
+
   [leftEarring, rightEarring].forEach(group => {
-    group.renderOrder = 1;
     group.traverse(obj => {
-      if (obj.isMesh?.material) {
-        const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
-        materials.forEach(m => {
-          m.depthTest = true;
-          m.depthWrite = true;
-        });
+      obj.renderOrder = 1;
+      if (obj.isMesh && obj.material) {
+        // Clonar materiales para que cada aro tenga instancias independientes
+        // y el cambio de color no afecte al otro ni al asset original del GLTF.
+        obj.material = Array.isArray(obj.material)
+          ? obj.material.map(upgradeMat)
+          : upgradeMat(obj.material);
       }
     });
   });
 
-  // ── Configurar física si vamos a modo dangle ─────────────────────
-  if (isDangleMode() && CFG.physics) {
-    dangleMode.configurePhysics(CFG.physics);
+  // ── Modelo de gancho por defecto (solo en modo dangle) ────────────
+  if (isDangleMode()) {
+    const hookUrl = CFG.pluginUrl + 'assets/models/hook-default.glb';
+    const hookGltf = await new Promise((resolve, reject) => {
+      new GLTFLoader().load(hookUrl, resolve, undefined, reject);
+    });
+
+    leftHook  = hookGltf.scene.clone(true);
+    rightHook = hookGltf.scene.clone(true);
+
+    leftHook.scale.setScalar(CALIB.scale);
+    rightHook.scale.setScalar(CALIB.scale);
+    rightHook.scale.x *= -1;
+
+    [leftHook, rightHook].forEach(group => {
+      group.traverse(obj => {
+        obj.renderOrder = 1;
+        if (obj.isMesh && obj.material) {
+          const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+          materials.forEach(m => {
+            m.depthTest = true;
+            m.depthWrite = true;
+          });
+        }
+      });
+    });
+  }
+
+  // ── Aplicar color/materiales iniciales ───────────────────────────
+  if ( CFG.colorMode === 'multi_color' && Array.isArray(CFG.colors) && CFG.colors.length > 0 ) {
+    applyColor(CFG.colors[0]);
+  } else if ( CFG.colorMode === 'per_material' && CFG.materialSlots ) {
+    applyMaterialSlots(CFG.materialSlots, THREE);
   }
 
   // ── Delegar al modo correspondiente ──────────────────────────────
@@ -133,6 +183,8 @@ async function startAR() {
     rightAnchor,
     leftEarring,
     rightEarring,
+    leftHook,
+    rightHook,
   };
 
   activeMode.init(ctx);
@@ -183,6 +235,8 @@ async function stopAR() {
   mindarThree = null;
   leftEarring  = null;
   rightEarring = null;
+  leftHook     = null;
+  rightHook    = null;
   THREE_REF    = null;
   started = false;
 }
@@ -190,6 +244,81 @@ async function stopAR() {
 // ═══════════════════════════════════════════════════════════════════
 // Listeners públicos
 // ═══════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
+// Cambio de color dinámico
+// Afecta solo a leftEarring / rightEarring — nunca a los hooks.
+// ═══════════════════════════════════════════════════════════════════
+function applyColor(hex) {
+  if (!hex) return;
+  [leftEarring, rightEarring].forEach(group => {
+    if (!group) return;
+    group.traverse(obj => {
+      if (!obj.isMesh || !obj.material) return;
+      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+      mats.forEach(m => {
+        m.map = null;       // quita la textura albedo para que el color sea sólido
+        m.color.set(hex);
+        m.needsUpdate = true;
+      });
+    });
+  });
+}
+
+/**
+ * Aplica slots { materialN: { type, value } } a los aros.
+ * Solo toca meshes cuyo material.name coincide con "materialN".
+ * Para "color": setea material.color y quita textura.
+ * Para "texture": carga la URL y asigna material.map.
+ */
+function applyMaterialSlots(slots, THREE) {
+  if (!slots) return;
+  const loader = new THREE.TextureLoader();
+
+  [leftEarring, rightEarring].forEach(group => {
+    if (!group) return;
+    group.traverse(obj => {
+      if (!obj.isMesh || !obj.material) return;
+      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+      mats.forEach(m => {
+        const key = (m.name || '').toLowerCase();
+        if (!slots[key]) return;
+        const slot = slots[key];
+        if (slot.type === 'color') {
+          // Soporte formato nuevo (colors[]) y legado (value)
+          const hex = Array.isArray(slot.colors) && slot.colors.length ? slot.colors[0] : (slot.value || '#c0c0c0');
+          m.color.set(hex);
+          m.map = null;
+          m.needsUpdate = true;
+        } else if (slot.type === 'texture' && slot.value) {
+          loader.load(slot.value, tex => {
+            tex.flipY = false; // GLB convention
+            m.map   = tex;
+            m.color.set('#ffffff');
+            m.needsUpdate = true;
+          });
+        }
+      });
+    });
+  });
+}
+
+function applyMaterialColor(materialName, hex) {
+  if (!hex || !materialName) return;
+  [leftEarring, rightEarring].forEach(group => {
+    if (!group) return;
+    group.traverse(obj => {
+      if (!obj.isMesh || !obj.material) return;
+      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+      mats.forEach(m => {
+        if ((m.name || '').toLowerCase() !== materialName) return;
+        m.map = null;
+        m.color.set(hex);
+        m.needsUpdate = true;
+      });
+    });
+  });
+}
+
 document.addEventListener('aureo-ar:open', () => {
   startAR().catch(err => {
     console.error('[Aureo AR]', err);
@@ -198,5 +327,15 @@ document.addEventListener('aureo-ar:open', () => {
 });
 
 document.addEventListener('aureo-ar:close', () => { stopAR(); });
+
+document.addEventListener('aureo-ar:set-color', e => {
+  if (CFG.arType !== 'accessory') return;
+  applyColor(e.detail);
+});
+
+document.addEventListener('aureo-ar:set-material-color', e => {
+  if (CFG.arType !== 'accessory') return;
+  applyMaterialColor(e.detail.material, e.detail.color);
+});
 
 console.log('[Aureo AR] tryon-face core cargado');

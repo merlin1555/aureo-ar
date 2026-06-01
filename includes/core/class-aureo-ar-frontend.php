@@ -3,7 +3,6 @@
  * Aureo AR — Frontend (visor del cliente final)
  *
  * v4 — Soporte para Aro Colgante:
- *   - Nuevos meta keys expuestos a JS: chainLength, mass, damping
  *   - Importmap incluye cannon-es cuando es earring_dangle
  *   - Migración silenciosa del antiguo 'earring' → 'earring_stud'
  */
@@ -16,9 +15,17 @@ class Aureo_AR_Frontend {
         add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_assets' ), 99 );
         add_action( 'wp_head', array( $this, 'print_importmap' ), 1 );
         add_action( 'wp_footer', array( $this, 'print_assets_fallback' ), 5 );
+        add_filter( 'script_loader_tag', array( $this, 'add_module_type_attr' ), 10, 2 );
 
         add_action( 'woocommerce_after_add_to_cart_button', array( $this, 'render_ar_button' ) );
         add_action( 'wp_footer', array( $this, 'render_modal' ), 50 );
+    }
+
+    public function add_module_type_attr( $tag, $handle ) {
+        if ( $handle === 'aureo-ar-tryon-face' ) {
+            return str_replace( '<script ', '<script type="module" ', $tag );
+        }
+        return $tag;
     }
 
     /* ---------------------------------------------------------------
@@ -38,6 +45,56 @@ class Aureo_AR_Frontend {
         return $type ?: 'none';
     }
 
+    public static function get_product_color_mode( $product_id = null ) {
+        $product_id = self::resolve_product_id( $product_id );
+        if ( ! $product_id ) { return 'model_texture'; }
+        $mode    = get_post_meta( $product_id, '_aureo_ar_color_mode', true );
+        $allowed = array( 'model_texture', 'multi_color', 'per_material' );
+        return in_array( $mode, $allowed, true ) ? $mode : 'model_texture';
+    }
+
+    public static function get_product_material_slots( $product_id = null ) {
+        $product_id = self::resolve_product_id( $product_id );
+        if ( ! $product_id ) { return array(); }
+        $raw  = get_post_meta( $product_id, '_aureo_ar_material_slots', true );
+        $obj  = json_decode( $raw, true );
+        if ( ! is_array( $obj ) ) { return array(); }
+        $clean = array();
+        foreach ( $obj as $name => $slot ) {
+            if ( ! preg_match( '/^material\d+$/i', (string) $name ) ) { continue; }
+            if ( ! is_array( $slot ) ) { continue; }
+            $type = ( isset( $slot['type'] ) && $slot['type'] === 'texture' ) ? 'texture' : 'color';
+            if ( $type === 'color' ) {
+                // Soporte formato nuevo (colors[]) y legado (value)
+                if ( isset( $slot['colors'] ) && is_array( $slot['colors'] ) ) {
+                    $colors = array_values( array_filter( $slot['colors'], function ( $c ) {
+                        return preg_match( '/^#[0-9a-fA-F]{6}$/', (string) $c );
+                    } ) );
+                } else {
+                    $v      = isset( $slot['value'] ) ? (string) $slot['value'] : '#c0c0c0';
+                    $colors = preg_match( '/^#[0-9a-fA-F]{6}$/', $v ) ? array( $v ) : array( '#c0c0c0' );
+                }
+                if ( empty( $colors ) ) { $colors = array( '#c0c0c0' ); }
+                $clean[ strtolower( $name ) ] = array( 'type' => 'color', 'colors' => $colors );
+            } else {
+                $value = isset( $slot['value'] ) ? (string) $slot['value'] : '';
+                $clean[ strtolower( $name ) ] = array( 'type' => 'texture', 'value' => $value );
+            }
+        }
+        return $clean;
+    }
+
+    public static function get_product_colors( $product_id = null ) {
+        $product_id = self::resolve_product_id( $product_id );
+        if ( ! $product_id ) { return array(); }
+        $raw  = get_post_meta( $product_id, '_aureo_ar_colors', true );
+        $arr  = json_decode( $raw, true );
+        if ( ! is_array( $arr ) ) { return array(); }
+        return array_values( array_filter( $arr, function ( $c ) {
+            return preg_match( '/^#[0-9a-fA-F]{6}$/', (string) $c );
+        } ) );
+    }
+
     public static function get_product_usdz_url( $product_id = null ) {
         $product_id = self::resolve_product_id( $product_id );
         if ( ! $product_id ) { return ''; }
@@ -52,28 +109,6 @@ class Aureo_AR_Frontend {
         // Migración silenciosa: 'earring' antiguo → 'earring_stud'
         if ( $acc === 'earring' ) { return 'earring_stud'; }
         return $acc ?: 'earring_stud';
-    }
-
-    /* Parámetros de física para earring_dangle */
-    public static function get_product_chain_length( $product_id = null ) {
-        $product_id = self::resolve_product_id( $product_id );
-        if ( ! $product_id ) { return 2.5; }
-        $val = get_post_meta( $product_id, '_aureo_ar_chain_length', true );
-        return $val !== '' ? floatval( $val ) : 2.5;
-    }
-
-    public static function get_product_earring_mass( $product_id = null ) {
-        $product_id = self::resolve_product_id( $product_id );
-        if ( ! $product_id ) { return 5.0; }
-        $val = get_post_meta( $product_id, '_aureo_ar_earring_mass', true );
-        return $val !== '' ? floatval( $val ) : 5.0;
-    }
-
-    public static function get_product_swing_damping( $product_id = null ) {
-        $product_id = self::resolve_product_id( $product_id );
-        if ( ! $product_id ) { return 0.4; }
-        $val = get_post_meta( $product_id, '_aureo_ar_swing_damping', true );
-        return $val !== '' ? floatval( $val ) : 0.4;
     }
 
     private static function resolve_product_id( $product_id ) {
@@ -215,16 +250,10 @@ class Aureo_AR_Frontend {
             'usdzUrl'       => self::get_product_usdz_url(),
             'pluginUrl'     => AUREO_AR_URL,
             'productName'   => get_the_title(),
+            'colorMode'     => self::get_product_color_mode(),
+            'colors'        => self::get_product_colors(),
+            'materialSlots' => self::get_product_material_slots(),
         );
-
-        // Parámetros físicos solo si es earring_dangle
-        if ( $this->is_dangle_mode() ) {
-            $cfg['physics'] = array(
-                'chainLength' => self::get_product_chain_length(),
-                'mass'        => self::get_product_earring_mass(),
-                'damping'     => self::get_product_swing_damping(),
-            );
-        }
 
         return $cfg;
     }
@@ -304,6 +333,7 @@ class Aureo_AR_Frontend {
                     </div>
                     <div id="aureo-ar-error" class="aureo-ar-error" hidden></div>
                 </div>
+                <?php $this->render_color_swatches(); ?>
                 <div class="aureo-ar-modal__footer">
                     <small><?php esc_html_e( 'La imagen de la cámara se procesa localmente en tu dispositivo.', 'aureo-ar' ); ?></small>
                 </div>
@@ -354,10 +384,73 @@ class Aureo_AR_Frontend {
                         <div id="aureo-ar-error" class="aureo-ar-error" hidden></div>
                     </model-viewer>
                 </div>
+                <?php $this->render_color_swatches(); ?>
                 <div class="aureo-ar-modal__footer">
                     <small><?php esc_html_e( 'Requiere un dispositivo compatible con ARCore (Android) o ARKit (iOS).', 'aureo-ar' ); ?></small>
                 </div>
             </div>
+        </div>
+        <?php
+    }
+
+    private function render_color_swatches() {
+        $mode = self::get_product_color_mode();
+
+        if ( $mode === 'multi_color' ) {
+            $colors = self::get_product_colors();
+            if ( empty( $colors ) ) { return; }
+            ?>
+            <div id="aureo-ar-colors" class="aureo-ar-colors" role="group" aria-label="<?php esc_attr_e( 'Seleccionar color', 'aureo-ar' ); ?>">
+                <?php foreach ( $colors as $i => $hex ) : ?>
+                <button
+                    type="button"
+                    class="aureo-ar-color-swatch<?php echo $i === 0 ? ' aureo-ar-color-swatch--active' : ''; ?>"
+                    data-color="<?php echo esc_attr( $hex ); ?>"
+                    style="--swatch-color:<?php echo esc_attr( $hex ); ?>;"
+                    aria-label="<?php echo esc_attr( $hex ); ?>"
+                ></button>
+                <?php endforeach; ?>
+            </div>
+            <?php
+
+        } elseif ( $mode === 'per_material' ) {
+            $this->render_material_swatches();
+        }
+    }
+
+    private function render_material_swatches() {
+        $slots = self::get_product_material_slots();
+        if ( empty( $slots ) ) { return; }
+
+        // Mostrar solo si al menos un material tiene más de un color (o al menos uno con tipo color)
+        $has_color_slot = false;
+        foreach ( $slots as $slot ) {
+            if ( $slot['type'] === 'color' && ! empty( $slot['colors'] ) ) {
+                $has_color_slot = true;
+                break;
+            }
+        }
+        if ( ! $has_color_slot ) { return; }
+        ?>
+        <div id="aureo-ar-material-swatches" class="aureo-ar-material-swatches" role="group" aria-label="<?php esc_attr_e( 'Seleccionar color por material', 'aureo-ar' ); ?>">
+            <?php foreach ( $slots as $mat_name => $slot ) : ?>
+                <?php if ( $slot['type'] !== 'color' || empty( $slot['colors'] ) ) { continue; } ?>
+                <div class="aureo-ar-material-group" data-material="<?php echo esc_attr( $mat_name ); ?>">
+                    <span class="aureo-ar-material-label"><?php echo esc_html( $mat_name ); ?></span>
+                    <div class="aureo-ar-material-colors">
+                        <?php foreach ( $slot['colors'] as $i => $hex ) : ?>
+                        <button
+                            type="button"
+                            class="aureo-ar-color-swatch<?php echo $i === 0 ? ' aureo-ar-color-swatch--active' : ''; ?>"
+                            data-color="<?php echo esc_attr( $hex ); ?>"
+                            data-material="<?php echo esc_attr( $mat_name ); ?>"
+                            style="--swatch-color:<?php echo esc_attr( $hex ); ?>;"
+                            aria-label="<?php echo esc_attr( $mat_name . ' ' . $hex ); ?>"
+                        ></button>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            <?php endforeach; ?>
         </div>
         <?php
     }

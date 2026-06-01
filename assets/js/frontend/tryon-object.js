@@ -27,6 +27,22 @@
   }
 
   /**
+   * Aplica un color hexadecimal a todos los materiales del model-viewer.
+   * Convierte hex → [r, g, b, 1] normalizados que acepta la Material API.
+   */
+  function applyColor(hex) {
+    const mv = document.getElementById('aureo-ar-mv');
+    if (!mv || !mv.model) return;
+    const r = parseInt(hex.slice(1, 3), 16) / 255;
+    const g = parseInt(hex.slice(3, 5), 16) / 255;
+    const b = parseInt(hex.slice(5, 7), 16) / 255;
+    mv.model.materials.forEach(mat => {
+      mat.pbrMetallicRoughness.baseColorTexture.setTexture(null); // quita albedo
+      mat.pbrMetallicRoughness.setBaseColorFactor([r, g, b, 1]);
+    });
+  }
+
+  /**
    * Inicializa listeners sobre el <model-viewer>.
    * Es idempotente: si se llama dos veces, solo engancha una vez.
    */
@@ -49,6 +65,11 @@
       hideLoader();
       logSupport();
       console.log('[Aureo AR · object] modelo cargado:', CFG.glbUrl);
+      if ( CFG.colorMode === 'multi_color' && Array.isArray(CFG.colors) && CFG.colors.length > 0 ) {
+        applyColor(CFG.colors[0]);
+      } else if ( CFG.colorMode === 'per_material' && CFG.materialSlots ) {
+        applyMaterialSlots(CFG.materialSlots);
+      }
     });
 
     mv.addEventListener('error', (ev) => {
@@ -114,6 +135,59 @@
   } else {
     initModelViewer();
   }
+
+  /**
+   * Aplica slots { materialN: { type, value } } usando la Material API de model-viewer.
+   * Para "texture": asigna una textura KHR_texture_basisu/PNG al slot base color.
+   */
+  function applyMaterialSlots(slots) {
+    const mv = document.getElementById('aureo-ar-mv');
+    if (!mv || !mv.model) return;
+    mv.model.materials.forEach(mat => {
+      const key = (mat.name || '').toLowerCase();
+      if (!slots[key]) return;
+      const slot = slots[key];
+      if (slot.type === 'color') {
+        // Soporte formato nuevo (colors[]) y legado (value)
+        const hex = Array.isArray(slot.colors) && slot.colors.length ? slot.colors[0] : (slot.value || '#c0c0c0');
+        const r = parseInt(hex.slice(1, 3), 16) / 255;
+        const g = parseInt(hex.slice(3, 5), 16) / 255;
+        const b = parseInt(hex.slice(5, 7), 16) / 255;
+        mat.pbrMetallicRoughness.baseColorTexture.setTexture(null);
+        mat.pbrMetallicRoughness.setBaseColorFactor([r, g, b, 1]);
+      } else if (slot.type === 'texture' && slot.value) {
+        mv.createTexture(slot.value).then(tex => {
+          mat.pbrMetallicRoughness.baseColorTexture.setTexture(tex);
+          mat.pbrMetallicRoughness.setBaseColorFactor([1, 1, 1, 1]);
+        }).catch(() => {
+          console.warn('[Aureo AR · object] no se pudo cargar textura:', slot.value);
+        });
+      }
+    });
+  }
+
+  function applyMaterialColor(materialName, hex) {
+    const mv = document.getElementById('aureo-ar-mv');
+    if (!mv || !mv.model || !hex || !materialName) return;
+    const r = parseInt(hex.slice(1, 3), 16) / 255;
+    const g = parseInt(hex.slice(3, 5), 16) / 255;
+    const b = parseInt(hex.slice(5, 7), 16) / 255;
+    mv.model.materials.forEach(mat => {
+      if ((mat.name || '').toLowerCase() !== materialName) return;
+      mat.pbrMetallicRoughness.baseColorTexture.setTexture(null);
+      mat.pbrMetallicRoughness.setBaseColorFactor([r, g, b, 1]);
+    });
+  }
+
+  document.addEventListener('aureo-ar:set-color', e => {
+    if (CFG.arType !== 'object') return;
+    applyColor(e.detail);
+  });
+
+  document.addEventListener('aureo-ar:set-material-color', e => {
+    if (CFG.arType !== 'object') return;
+    applyMaterialColor(e.detail.material, e.detail.color);
+  });
 
   console.log('[Aureo AR · object] motor objeto listo. CFG:', CFG);
 })();
