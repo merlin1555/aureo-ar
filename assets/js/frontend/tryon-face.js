@@ -2,8 +2,10 @@
 // Maneja el ciclo de vida del AR facial (MindAR + Three.js) y delega
 // la lógica específica del aro al modo correspondiente (stud o dangle).
 
-import { studMode }   from './tryon-face-stud.js';
-import { dangleMode } from './tryon-face-dangle.js';
+import { studMode }                    from './tryon-face-stud.js';
+import { dangleMode }                  from './tryon-face-dangle.js';
+import { glassesMode, GLASSES_CALIB }  from './tryon-face-glasses.js';
+import { maskMode,    MASK_CALIB }     from './tryon-face-mask.js';
 
 const CFG = window.AUREO_AR_CFG || {};
 let started = false;
@@ -15,6 +17,9 @@ let leftEarring  = null;
 let rightEarring = null;
 let leftHook     = null;
 let rightHook    = null;
+let glasses      = null;
+let mask         = null;
+let bridgeAnchor = null;
 
 // ═══════════════════════════════════════════════════════════════════
 // Calibración compartida (la usan ambos modos vía import)
@@ -47,6 +52,23 @@ function isDangleMode() {
   return CFG.accessoryType === 'earring_dangle';
 }
 
+function isGlassesMode() {
+  return CFG.accessoryType === 'glasses';
+}
+
+function isMaskMode() {
+  return CFG.accessoryType === 'mask';
+}
+
+// Retorna los modelos sobre los que aplican los cambios de color/material.
+// En modo lentes o máscara: el modelo facial único.
+// En modo aros: izquierdo y derecho (nunca los hooks).
+function getColorTargets() {
+  if (isGlassesMode()) return glasses ? [glasses] : [];
+  if (isMaskMode())    return mask    ? [mask]    : [];
+  return [leftEarring, rightEarring].filter(Boolean);
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Arranque del AR
 // ═══════════════════════════════════════════════════════════════════
@@ -73,9 +95,17 @@ async function startAR() {
   // Solo luz ambiente: iluminación uniforme sin sombras direccionales.
   scene.add(new THREE.AmbientLight(0xffffff, 3.14));
 
-  // ── Anchors izq/der ──────────────────────────────────────────────
-  const leftAnchor  = mindarThree.addAnchor(CALIB.leftAnchorIdx);
-  const rightAnchor = mindarThree.addAnchor(CALIB.rightAnchorIdx);
+  // ── Anchors — solo los que necesita el modo activo ───────────────
+  let leftAnchor  = null;
+  let rightAnchor = null;
+  if (isGlassesMode()) {
+    bridgeAnchor = mindarThree.addAnchor(GLASSES_CALIB.anchorIdx);
+  } else if (isMaskMode()) {
+    bridgeAnchor = mindarThree.addAnchor(MASK_CALIB.anchorIdx);
+  } else {
+    leftAnchor  = mindarThree.addAnchor(CALIB.leftAnchorIdx);
+    rightAnchor = mindarThree.addAnchor(CALIB.rightAnchorIdx);
+  }
 
   // ── Occluder facial (oculta lo que está detrás de la cara) ───────
   const occluder = mindarThree.addFaceMesh();
@@ -99,13 +129,6 @@ async function startAR() {
     new GLTFLoader().load(CFG.glbUrl, resolve, undefined, reject);
   });
 
-  leftEarring  = gltf.scene.clone(true);
-  rightEarring = gltf.scene.clone(true);
-
-  leftEarring.scale.setScalar(CALIB.scale);
-  rightEarring.scale.setScalar(CALIB.scale);
-  rightEarring.scale.x *= -1; // efecto espejo
-
   // Convertir TODOS los materiales a MeshBasicMaterial: muestra el color
   // puro sin ningún cálculo de iluminación, equivalente a luz ambiental
   // perfecta y uniforme desde todas las direcciones. Esto resuelve que
@@ -125,21 +148,55 @@ async function startAR() {
     return basic;
   };
 
-  [leftEarring, rightEarring].forEach(group => {
-    group.traverse(obj => {
+  if (isGlassesMode()) {
+    // ── Modo lentes: un único modelo centrado en el puente ────────────
+    glasses = gltf.scene.clone(true);
+    glasses.scale.setScalar(GLASSES_CALIB.scale);
+    glasses.traverse(obj => {
       obj.renderOrder = 1;
       if (obj.isMesh && obj.material) {
-        // Clonar materiales para que cada aro tenga instancias independientes
-        // y el cambio de color no afecte al otro ni al asset original del GLTF.
         obj.material = Array.isArray(obj.material)
           ? obj.material.map(upgradeMat)
           : upgradeMat(obj.material);
       }
     });
-  });
+  } else if (isMaskMode()) {
+    // ── Modo máscara: un único modelo centrado en el eje nasal ────────
+    mask = gltf.scene.clone(true);
+    mask.scale.setScalar(MASK_CALIB.scale);
+    mask.traverse(obj => {
+      obj.renderOrder = 1;
+      if (obj.isMesh && obj.material) {
+        obj.material = Array.isArray(obj.material)
+          ? obj.material.map(upgradeMat)
+          : upgradeMat(obj.material);
+      }
+    });
+  } else {
+    // ── Modo aros: dos clones, derecho con espejo en X ────────────────
+    leftEarring  = gltf.scene.clone(true);
+    rightEarring = gltf.scene.clone(true);
 
-  // ── Modelo de gancho por defecto (solo en modo dangle) ────────────
-  if (isDangleMode()) {
+    leftEarring.scale.setScalar(CALIB.scale);
+    rightEarring.scale.setScalar(CALIB.scale);
+    rightEarring.scale.x *= -1; // efecto espejo
+
+    [leftEarring, rightEarring].forEach(group => {
+      group.traverse(obj => {
+        obj.renderOrder = 1;
+        if (obj.isMesh && obj.material) {
+          // Clonar materiales para que cada aro tenga instancias independientes
+          // y el cambio de color no afecte al otro ni al asset original del GLTF.
+          obj.material = Array.isArray(obj.material)
+            ? obj.material.map(upgradeMat)
+            : upgradeMat(obj.material);
+        }
+      });
+    });
+  }
+
+  // ── Modelo de gancho por defecto (solo en modo earring_dangle) ──────
+  if (!isGlassesMode() && !isMaskMode() && isDangleMode()) {
     const hookUrl = CFG.pluginUrl + 'assets/models/hook-default.glb';
     const hookGltf = await new Promise((resolve, reject) => {
       new GLTFLoader().load(hookUrl, resolve, undefined, reject);
@@ -174,15 +231,21 @@ async function startAR() {
   }
 
   // ── Delegar al modo correspondiente ──────────────────────────────
-  activeMode = isDangleMode() ? dangleMode : studMode;
+  activeMode = isGlassesMode() ? glassesMode
+             : isMaskMode()    ? maskMode
+             : isDangleMode()  ? dangleMode
+             : studMode;
 
   const ctx = {
     THREE,
     scene,
     leftAnchor,
     rightAnchor,
+    bridgeAnchor,
     leftEarring,
     rightEarring,
+    glasses,
+    mask,
     leftHook,
     rightHook,
   };
@@ -196,8 +259,14 @@ async function startAR() {
 
   renderer.setAnimationLoop(animate);
 
-  console.log('[Aureo AR] iniciado · modo:', isDangleMode() ? 'DANGLE' : 'STUD');
-  console.log('  Anchors:', CALIB.leftAnchorIdx, '/', CALIB.rightAnchorIdx);
+  if (isGlassesMode()) {
+    console.log('[Aureo AR] iniciado · modo: GLASSES · anchor:', GLASSES_CALIB.anchorIdx);
+  } else if (isMaskMode()) {
+    console.log('[Aureo AR] iniciado · modo: MASK · anchor:', MASK_CALIB.anchorIdx);
+  } else {
+    console.log('[Aureo AR] iniciado · modo:', isDangleMode() ? 'DANGLE' : 'STUD');
+    console.log('  Anchors:', CALIB.leftAnchorIdx, '/', CALIB.rightAnchorIdx);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -231,12 +300,15 @@ async function stopAR() {
   window.AureoAR?.resetStage?.();
 
   activeMode?.reset?.();
-  activeMode  = null;
-  mindarThree = null;
+  activeMode   = null;
+  mindarThree  = null;
   leftEarring  = null;
   rightEarring = null;
   leftHook     = null;
   rightHook    = null;
+  glasses      = null;
+  mask         = null;
+  bridgeAnchor = null;
   THREE_REF    = null;
   started = false;
 }
@@ -246,12 +318,11 @@ async function stopAR() {
 // ═══════════════════════════════════════════════════════════════════
 // ═══════════════════════════════════════════════════════════════════
 // Cambio de color dinámico
-// Afecta solo a leftEarring / rightEarring — nunca a los hooks.
+// Afecta al modelo activo (lentes o aros) — nunca a los hooks.
 // ═══════════════════════════════════════════════════════════════════
 function applyColor(hex) {
   if (!hex) return;
-  [leftEarring, rightEarring].forEach(group => {
-    if (!group) return;
+  getColorTargets().forEach(group => {
     group.traverse(obj => {
       if (!obj.isMesh || !obj.material) return;
       const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
@@ -274,8 +345,7 @@ function applyMaterialSlots(slots, THREE) {
   if (!slots) return;
   const loader = new THREE.TextureLoader();
 
-  [leftEarring, rightEarring].forEach(group => {
-    if (!group) return;
+  getColorTargets().forEach(group => {
     group.traverse(obj => {
       if (!obj.isMesh || !obj.material) return;
       const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
@@ -304,8 +374,7 @@ function applyMaterialSlots(slots, THREE) {
 
 function applyMaterialColor(materialName, hex) {
   if (!hex || !materialName) return;
-  [leftEarring, rightEarring].forEach(group => {
-    if (!group) return;
+  getColorTargets().forEach(group => {
     group.traverse(obj => {
       if (!obj.isMesh || !obj.material) return;
       const mats = Array.isArray(obj.material) ? obj.material : [obj.material];

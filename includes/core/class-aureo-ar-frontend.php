@@ -153,6 +153,16 @@ class Aureo_AR_Frontend {
             && self::get_product_accessory_type() === 'earring_dangle';
     }
 
+    public function is_glasses_mode() {
+        return $this->is_accessory_mode()
+            && self::get_product_accessory_type() === 'glasses';
+    }
+
+    public function is_mask_mode() {
+        return $this->is_accessory_mode()
+            && self::get_product_accessory_type() === 'mask';
+    }
+
     /* ---------------------------------------------------------------
      * Importmap: solo para modo accesorio
      * Si es dangle, incluye cannon-es

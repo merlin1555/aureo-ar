@@ -22,7 +22,7 @@ class Aureo_AR_WCFM {
     const ALLOWED_TYPES = array( 'none', 'accessory', 'object' );
 
     const ALLOWED_ACCESSORY_TYPES = array(
-        'earring_stud', 'earring_dangle',
+        'earring_stud', 'earring_dangle', 'glasses', 'mask',
         // futuros: headband, clip, watch, necklace, cosplay
     );
 
@@ -113,9 +113,16 @@ class Aureo_AR_WCFM {
                                 <option value="earring_dangle" <?php selected( $acc_type, 'earring_dangle' ); ?>>
                                     <?php esc_html_e( '🪢 Aro Colgante (con física tipo péndulo)', 'aureo-ar' ); ?>
                                 </option>
+                                <option value="glasses"        <?php selected( $acc_type, 'glasses' ); ?>>
+                                    <?php esc_html_e( '👓 Lentes (puente nasal)', 'aureo-ar' ); ?>
+                                </option>
+                                <option value="mask"           <?php selected( $acc_type, 'mask' ); ?>>
+                                    <?php esc_html_e( '🎭 Máscara / Antifaz (puente nasal)', 'aureo-ar' ); ?>
+                                </option>
                             </select>
                             <p class="aureo-ar-hint">
                                 <?php esc_html_e( 'Aro Pegado: queda fijo a la oreja. Aro Colgante: cuelga y se balancea con el movimiento.', 'aureo-ar' ); ?>
+                                <?php esc_html_e( 'Lentes: el modelo debe tener el puente centrado en el origen (0,0,0).', 'aureo-ar' ); ?>
                             </p>
                         </div>
 
@@ -560,7 +567,7 @@ class Aureo_AR_WCFM {
             display: none !important;
         }
         /* Solo mostrar parámetros físicos si es accessory + earring_dangle */
-        .aureo-ar-grid[data-aureo-acc-type="earring_stud"] .aureo-row--earring-dangle {
+        .aureo-ar-grid:not([data-aureo-acc-type="earring_dangle"]) .aureo-row--earring-dangle {
             display: none !important;
         }
 
@@ -936,6 +943,8 @@ class Aureo_AR_WCFM {
             $labels = array(
                 'earring_stud'   => __( 'Aro Pegado', 'aureo-ar' ),
                 'earring_dangle' => __( 'Aro Colgante (con péndulo físico)', 'aureo-ar' ),
+                'glasses'        => __( 'Lentes', 'aureo-ar' ),
+                'mask'           => __( 'Máscara / Antifaz', 'aureo-ar' ),
                 'earring'        => __( 'Aro / Pendiente (legacy)', 'aureo-ar' ), // compat
             );
             $label = isset( $labels[ $acc_type ] ) ? $labels[ $acc_type ] : $acc_type;
