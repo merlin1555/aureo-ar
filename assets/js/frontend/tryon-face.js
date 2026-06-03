@@ -5,7 +5,8 @@
 import { studMode }                    from './tryon-face-stud.js';
 import { dangleMode }                  from './tryon-face-dangle.js';
 import { glassesMode, GLASSES_CALIB }  from './tryon-face-glasses.js';
-import { maskMode,    MASK_CALIB }     from './tryon-face-mask.js';
+import { maskMode,       MASK_CALIB }      from './tryon-face-mask.js';
+import { facemaskMode,  FACEMASK_CALIB }  from './tryon-face-facemask.js';
 
 const CFG = window.AUREO_AR_CFG || {};
 let started = false;
@@ -19,7 +20,9 @@ let leftHook     = null;
 let rightHook    = null;
 let glasses      = null;
 let mask         = null;
+let facemask     = null;
 let bridgeAnchor = null;
+let chinAnchor   = null;
 
 // ═══════════════════════════════════════════════════════════════════
 // Calibración compartida (la usan ambos modos vía import)
@@ -60,12 +63,17 @@ function isMaskMode() {
   return CFG.accessoryType === 'mask';
 }
 
+function isFacemaskMode() {
+  return CFG.accessoryType === 'facemask';
+}
+
 // Retorna los modelos sobre los que aplican los cambios de color/material.
-// En modo lentes o máscara: el modelo facial único.
+// En modos faciales de un solo modelo: el modelo correspondiente.
 // En modo aros: izquierdo y derecho (nunca los hooks).
 function getColorTargets() {
-  if (isGlassesMode()) return glasses ? [glasses] : [];
-  if (isMaskMode())    return mask    ? [mask]    : [];
+  if (isGlassesMode())  return glasses  ? [glasses]  : [];
+  if (isMaskMode())     return mask     ? [mask]     : [];
+  if (isFacemaskMode()) return facemask ? [facemask] : [];
   return [leftEarring, rightEarring].filter(Boolean);
 }
 
@@ -92,8 +100,10 @@ async function startAR() {
   ({ renderer, scene, camera } = mindarThree);
 
   // ── Luces ─────────────────────────────────────────────────────────
-  // Solo luz ambiente: iluminación uniforme sin sombras direccionales.
-  scene.add(new THREE.AmbientLight(0xffffff, 3.14));
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x888888, 1.0));
+  const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
+  keyLight.position.set(0, 1, 1);
+  scene.add(keyLight);
 
   // ── Anchors — solo los que necesita el modo activo ───────────────
   let leftAnchor  = null;
@@ -102,6 +112,8 @@ async function startAR() {
     bridgeAnchor = mindarThree.addAnchor(GLASSES_CALIB.anchorIdx);
   } else if (isMaskMode()) {
     bridgeAnchor = mindarThree.addAnchor(MASK_CALIB.anchorIdx);
+  } else if (isFacemaskMode()) {
+    chinAnchor = mindarThree.addAnchor(FACEMASK_CALIB.anchorIdx);
   } else {
     leftAnchor  = mindarThree.addAnchor(CALIB.leftAnchorIdx);
     rightAnchor = mindarThree.addAnchor(CALIB.rightAnchorIdx);
@@ -129,12 +141,8 @@ async function startAR() {
     new GLTFLoader().load(CFG.glbUrl, resolve, undefined, reject);
   });
 
-  // Convertir TODOS los materiales a MeshBasicMaterial: muestra el color
-  // puro sin ningún cálculo de iluminación, equivalente a luz ambiental
-  // perfecta y uniforme desde todas las direcciones. Esto resuelve que
-  // materiales metálicos (metalness alto) queden negros con solo ambient.
   const upgradeMat = m => {
-    const basic = new THREE.MeshBasicMaterial({
+    const phong = new THREE.MeshPhongMaterial({
       color:       m.color ? m.color.clone() : new THREE.Color(1, 1, 1),
       map:         m.map        ?? null,
       transparent: m.transparent ?? false,
@@ -143,9 +151,11 @@ async function startAR() {
       alphaTest:   m.alphaTest   ?? 0,
       depthTest:   true,
       depthWrite:  true,
+      shininess:   30,
+      specular:    new THREE.Color(0x222222),
     });
-    basic.name = m.name ?? '';
-    return basic;
+    phong.name = m.name ?? '';
+    return phong;
   };
 
   if (isGlassesMode()) {
@@ -165,6 +175,18 @@ async function startAR() {
     mask = gltf.scene.clone(true);
     mask.scale.setScalar(MASK_CALIB.scale);
     mask.traverse(obj => {
+      obj.renderOrder = 1;
+      if (obj.isMesh && obj.material) {
+        obj.material = Array.isArray(obj.material)
+          ? obj.material.map(upgradeMat)
+          : upgradeMat(obj.material);
+      }
+    });
+  } else if (isFacemaskMode()) {
+    // ── Modo mascarilla: modelo anclado al mentón ─────────────────────
+    facemask = gltf.scene.clone(true);
+    facemask.scale.setScalar(FACEMASK_CALIB.scale);
+    facemask.traverse(obj => {
       obj.renderOrder = 1;
       if (obj.isMesh && obj.material) {
         obj.material = Array.isArray(obj.material)
@@ -196,7 +218,7 @@ async function startAR() {
   }
 
   // ── Modelo de gancho por defecto (solo en modo earring_dangle) ──────
-  if (!isGlassesMode() && !isMaskMode() && isDangleMode()) {
+  if (!isGlassesMode() && !isMaskMode() && !isFacemaskMode() && isDangleMode()) {
     const hookUrl = CFG.pluginUrl + 'assets/models/hook-default.glb';
     const hookGltf = await new Promise((resolve, reject) => {
       new GLTFLoader().load(hookUrl, resolve, undefined, reject);
@@ -231,9 +253,10 @@ async function startAR() {
   }
 
   // ── Delegar al modo correspondiente ──────────────────────────────
-  activeMode = isGlassesMode() ? glassesMode
-             : isMaskMode()    ? maskMode
-             : isDangleMode()  ? dangleMode
+  activeMode = isGlassesMode()  ? glassesMode
+             : isMaskMode()     ? maskMode
+             : isFacemaskMode() ? facemaskMode
+             : isDangleMode()   ? dangleMode
              : studMode;
 
   const ctx = {
@@ -242,10 +265,12 @@ async function startAR() {
     leftAnchor,
     rightAnchor,
     bridgeAnchor,
+    chinAnchor,
     leftEarring,
     rightEarring,
     glasses,
     mask,
+    facemask,
     leftHook,
     rightHook,
   };
@@ -263,6 +288,8 @@ async function startAR() {
     console.log('[Aureo AR] iniciado · modo: GLASSES · anchor:', GLASSES_CALIB.anchorIdx);
   } else if (isMaskMode()) {
     console.log('[Aureo AR] iniciado · modo: MASK · anchor:', MASK_CALIB.anchorIdx);
+  } else if (isFacemaskMode()) {
+    console.log('[Aureo AR] iniciado · modo: FACEMASK · anchor:', FACEMASK_CALIB.anchorIdx);
   } else {
     console.log('[Aureo AR] iniciado · modo:', isDangleMode() ? 'DANGLE' : 'STUD');
     console.log('  Anchors:', CALIB.leftAnchorIdx, '/', CALIB.rightAnchorIdx);
@@ -308,7 +335,9 @@ async function stopAR() {
   rightHook    = null;
   glasses      = null;
   mask         = null;
+  facemask     = null;
   bridgeAnchor = null;
+  chinAnchor   = null;
   THREE_REF    = null;
   started = false;
 }

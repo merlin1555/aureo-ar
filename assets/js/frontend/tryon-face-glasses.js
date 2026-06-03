@@ -24,7 +24,7 @@ export const GLASSES_CALIB = {
   // (se rotan junto con la cabeza). Ajustar si el modelo no queda centrado.
   offsetX:  0.0,   // lateral — debería ser 0 si el puente ya está en X=0
   offsetY:  0.7,   // vertical — subir (+) o bajar (-) los lentes
-  offsetZ: 0.0,   // profundidad — valor negativo empuja los lentes hacia adelante
+  offsetZ: -0.5,   // profundidad — valor negativo empuja los lentes hacia adelante
                    // (fuera de la superficie facial) para evitar z-fighting
 
   // Corrección de rotación en grados (se aplica encima de la rotación de la cara).

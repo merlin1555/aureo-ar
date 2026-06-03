@@ -22,7 +22,7 @@ class Aureo_AR_WCFM {
     const ALLOWED_TYPES = array( 'none', 'accessory', 'object' );
 
     const ALLOWED_ACCESSORY_TYPES = array(
-        'earring_stud', 'earring_dangle', 'glasses', 'mask',
+        'earring_stud', 'earring_dangle', 'glasses', 'mask', 'facemask',
         // futuros: headband, clip, watch, necklace, cosplay
     );
 
@@ -118,6 +118,9 @@ class Aureo_AR_WCFM {
                                 </option>
                                 <option value="mask"           <?php selected( $acc_type, 'mask' ); ?>>
                                     <?php esc_html_e( '🎭 Máscara / Antifaz (puente nasal)', 'aureo-ar' ); ?>
+                                </option>
+                                <option value="facemask"       <?php selected( $acc_type, 'facemask' ); ?>>
+                                    <?php esc_html_e( '😷 Mascarilla (cubre mandíbula)', 'aureo-ar' ); ?>
                                 </option>
                             </select>
                             <p class="aureo-ar-hint">
@@ -945,6 +948,7 @@ class Aureo_AR_WCFM {
                 'earring_dangle' => __( 'Aro Colgante (con péndulo físico)', 'aureo-ar' ),
                 'glasses'        => __( 'Lentes', 'aureo-ar' ),
                 'mask'           => __( 'Máscara / Antifaz', 'aureo-ar' ),
+                'facemask'       => __( 'Mascarilla (cubre mandíbula)', 'aureo-ar' ),
                 'earring'        => __( 'Aro / Pendiente (legacy)', 'aureo-ar' ), // compat
             );
             $label = isset( $labels[ $acc_type ] ) ? $labels[ $acc_type ] : $acc_type;

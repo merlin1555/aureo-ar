@@ -163,6 +163,11 @@ class Aureo_AR_Frontend {
             && self::get_product_accessory_type() === 'mask';
     }
 
+    public function is_facemask_mode() {
+        return $this->is_accessory_mode()
+            && self::get_product_accessory_type() === 'facemask';
+    }
+
     /* ---------------------------------------------------------------
      * Importmap: solo para modo accesorio
      * Si es dangle, incluye cannon-es

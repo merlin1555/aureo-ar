@@ -73,6 +73,7 @@ class Aureo_AR_Woo {
                         <option value="earring"        <?php selected( $acc_type, 'earring' ); ?>><?php esc_html_e( 'Aro / Pendiente', 'aureo-ar' ); ?></option>
                         <option value="glasses"        <?php selected( $acc_type, 'glasses' ); ?>><?php esc_html_e( 'Lentes', 'aureo-ar' ); ?></option>
                         <option value="mask"           <?php selected( $acc_type, 'mask' ); ?>><?php esc_html_e( 'Máscara / Antifaz', 'aureo-ar' ); ?></option>
+                        <option value="facemask"       <?php selected( $acc_type, 'facemask' ); ?>><?php esc_html_e( 'Mascarilla (cubre mandíbula)', 'aureo-ar' ); ?></option>
                         <!-- Próximamente:
                         <option value="headband" <?php selected( $acc_type, 'headband' ); ?>>Cintillo</option>
                         <option value="clip"     <?php selected( $acc_type, 'clip' ); ?>>Pinche / Clip</option>
@@ -204,7 +205,7 @@ class Aureo_AR_Woo {
      * ------------------------------------------------------------- */
     public function save_ar_fields( $post_id ) {
         $allowed_types     = array( 'none', 'accessory', 'object' );
-        $allowed_acc_types = array( 'earring', 'earring_stud', 'earring_dangle', 'glasses', 'mask', 'headband', 'clip', 'watch', 'necklace', 'cosplay' );
+        $allowed_acc_types = array( 'earring', 'earring_stud', 'earring_dangle', 'glasses', 'mask', 'facemask', 'headband', 'clip', 'watch', 'necklace', 'cosplay' );
 
         if ( isset( $_POST['aureo_ar_type'] ) ) {
             $type = in_array( $_POST['aureo_ar_type'], $allowed_types, true ) ? $_POST['aureo_ar_type'] : 'none';
@@ -293,6 +294,7 @@ class Aureo_AR_Woo {
                 'earring_dangle' => 'Aro Colgante',
                 'glasses'        => 'Lentes',
                 'mask'           => 'Máscara / Antifaz',
+                'facemask'       => 'Mascarilla (cubre mandíbula)',
                 'headband'       => 'Cintillo',
                 'clip'           => 'Pinche / Clip',
                 'watch'          => 'Reloj',
